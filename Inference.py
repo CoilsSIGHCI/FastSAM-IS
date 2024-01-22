@@ -1,5 +1,5 @@
 import argparse
-from fastsam import FastSAM, FastSAMPrompt 
+from EI.FastSAM.fastsam import FastSAM, FastSAMPrompt
 import ast
 import torch
 from PIL import Image

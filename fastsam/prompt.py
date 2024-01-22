@@ -231,20 +231,20 @@ class FastSAMPrompt:
         target_height=960,
         target_width=960,
     ):
-        msak_sum = annotation.shape[0]
+        mask_sum = annotation.shape[0]
         height = annotation.shape[1]
         weight = annotation.shape[2]
         #Sort annotations based on area.
-        areas = np.sum(annotation, axis=(1, 2))
+        areas = annotation.sum(axis=(1, 2))
         sorted_indices = np.argsort(areas)
         annotation = annotation[sorted_indices]
 
-        index = (annotation != 0).argmax(axis=0)
+        index = annotation.argmax(axis=0)
         if random_color:
-            color = np.random.random((msak_sum, 1, 1, 3))
+            color = np.random.random((mask_sum, 1, 1, 3))
         else:
-            color = np.ones((msak_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 255 / 255])
-        transparency = np.ones((msak_sum, 1, 1, 1)) * 0.6
+            color = np.ones((mask_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 255 / 255])
+        transparency = np.ones((mask_sum, 1, 1, 1)) * 0.6
         visual = np.concatenate([color, transparency], axis=-1)
         mask_image = np.expand_dims(annotation, -1) * visual
 
@@ -275,6 +275,81 @@ class FastSAMPrompt:
         if not retinamask:
             show = cv2.resize(show, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
         ax.imshow(show)
+
+    def fast_show_mask_outline(
+        self,
+        annotation,
+        ax,
+        random_color=False,
+        bboxes=None,
+        points=None,
+        pointlabel=None,
+        retinamask=True,
+        target_height=960,
+        target_width=960,
+    ):
+        mask_sum = annotation.shape[0]
+        height = annotation.shape[1]
+        weight = annotation.shape[2]
+        #Sort annotations based on area.
+        areas = annotation.sum(axis=(1, 2))
+        sorted_indices = np.argsort(areas)
+        annotation = annotation[sorted_indices]
+
+        index = annotation.argmax(axis=0)
+        if random_color:
+            color = np.random.random((mask_sum, 1, 1, 3))
+        else:
+            color = np.ones((mask_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 255 / 255])
+        transparency = np.ones((mask_sum, 1, 1, 1)) * 0.6
+        visual = np.concatenate([color, transparency], axis=-1)
+        mask_image = np.expand_dims(annotation, -1) * visual
+
+        show = np.zeros((height, weight, 4))
+        h_indices, w_indices = np.meshgrid(np.arange(height), np.arange(weight), indexing='ij')
+        indices = (index[h_indices, w_indices], h_indices, w_indices, slice(None))
+
+        mask_image_outline = np.zeros((height, weight, 4))
+        for i in range(mask_sum):
+            # use canny to find the outline
+            mask = annotation[i] * 255
+            mask = mask.astype(np.uint8)
+            mask = cv2.Canny(mask, 100, 200)
+            # dump the mask to the image in b&w
+            mask_image_outline[:, :, 0] = mask
+            mask_image_outline[:, :, 1] = mask
+            mask_image_outline[:, :, 2] = mask
+            mask_image_outline[:, :, 3] = mask
+
+            # deump the outline to file
+            cv2.imwrite(f"/tmp/mask_{i}.png", mask_image_outline)
+
+        # Use vectorized indexing to update the values of 'show'.
+        show[h_indices, w_indices, :] = mask_image_outline[indices]
+        if bboxes is not None:
+            for bbox in bboxes:
+                x1, y1, x2, y2 = bbox
+                ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1, fill=False, edgecolor='b', linewidth=1))
+        # draw point
+        if points is not None:
+            plt.scatter(
+                [point[0] for i, point in enumerate(points) if pointlabel[i] == 1],
+                [point[1] for i, point in enumerate(points) if pointlabel[i] == 1],
+                s=20,
+                c='y',
+            )
+            plt.scatter(
+                [point[0] for i, point in enumerate(points) if pointlabel[i] == 0],
+                [point[1] for i, point in enumerate(points) if pointlabel[i] == 0],
+                s=20,
+                c='m',
+            )
+
+        if not retinamask:
+            show = cv2.resize(show, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
+        ax.imshow(show)
+
+        return show
 
     def fast_show_mask_gpu(
         self,

@@ -1,8 +1,8 @@
-from fastsam import FastSAM, FastSAMPrompt
+from EI.FastSAM.fastsam import FastSAM, FastSAMPrompt
 import torch 
 
 model = FastSAM('FastSAM.pt')
-IMAGE_PATH = './images/dogs.jpg'
+IMAGE_PATH = 'images/dogs.jpg'
 DEVICE = torch.device(
     "cuda"
     if torch.cuda.is_available()
