@@ -1,4 +1,4 @@
-from EI.FastSAM.fastsam import FastSAM, FastSAMPrompt
+from fastsam import FastSAM, FastSAMPrompt
 import torch 
 
 model = FastSAM('FastSAM.pt')
