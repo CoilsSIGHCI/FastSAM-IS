@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from .utils import image_to_np_ndarray
 from PIL import Image
+from EI.hw import is_raspberry_pi
 
 try:
     import clip  # for linear_assignment
@@ -276,6 +277,8 @@ class FastSAMPrompt:
             show = cv2.resize(show, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
         ax.imshow(show)
 
+        return show
+
     def fast_show_mask_outline(
         self,
         annotation,
@@ -297,59 +300,20 @@ class FastSAMPrompt:
         annotation = annotation[sorted_indices]
 
         index = annotation.argmax(axis=0)
-        if random_color:
-            color = np.random.random((mask_sum, 1, 1, 3))
+
+        # flatten all annotations into a binary mask
+        binary_mask = np.sum(annotation, axis=0)
+        # mask self.img by binary mask
+        masked = cv2.bitwise_and(cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY), cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY), mask=binary_mask.astype(np.uint8))
+
+        if not is_raspberry_pi():
+            cv2.imshow('masked', masked)
         else:
-            color = np.ones((mask_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 255 / 255])
-        transparency = np.ones((mask_sum, 1, 1, 1)) * 0.6
-        visual = np.concatenate([color, transparency], axis=-1)
-        mask_image = np.expand_dims(annotation, -1) * visual
+            cv2.imwrite('/tmp/masked.png', masked)
 
         show = np.zeros((height, weight, 4))
-        h_indices, w_indices = np.meshgrid(np.arange(height), np.arange(weight), indexing='ij')
-        indices = (index[h_indices, w_indices], h_indices, w_indices, slice(None))
 
-        mask_image_outline = np.zeros((height, weight, 4))
-        for i in range(mask_sum):
-            # use canny to find the outline
-            mask = annotation[i] * 255
-            mask = mask.astype(np.uint8)
-            mask = cv2.Canny(mask, 100, 200)
-            # dump the mask to the image in b&w
-            mask_image_outline[:, :, 0] = mask
-            mask_image_outline[:, :, 1] = mask
-            mask_image_outline[:, :, 2] = mask
-            mask_image_outline[:, :, 3] = mask
-
-            # deump the outline to file
-            cv2.imwrite(f"/tmp/mask_{i}.png", mask_image_outline)
-
-        # Use vectorized indexing to update the values of 'show'.
-        show[h_indices, w_indices, :] = mask_image_outline[indices]
-        if bboxes is not None:
-            for bbox in bboxes:
-                x1, y1, x2, y2 = bbox
-                ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1, fill=False, edgecolor='b', linewidth=1))
-        # draw point
-        if points is not None:
-            plt.scatter(
-                [point[0] for i, point in enumerate(points) if pointlabel[i] == 1],
-                [point[1] for i, point in enumerate(points) if pointlabel[i] == 1],
-                s=20,
-                c='y',
-            )
-            plt.scatter(
-                [point[0] for i, point in enumerate(points) if pointlabel[i] == 0],
-                [point[1] for i, point in enumerate(points) if pointlabel[i] == 0],
-                s=20,
-                c='m',
-            )
-
-        if not retinamask:
-            show = cv2.resize(show, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
-        ax.imshow(show)
-
-        return show
+        return masked
 
     def fast_show_mask_gpu(
         self,
