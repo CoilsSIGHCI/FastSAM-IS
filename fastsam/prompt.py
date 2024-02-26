@@ -26,7 +26,7 @@ class FastSAMPrompt:
         self.device = device
         self.results = results
         self.img = image
-    
+
     def _segment_image(self, image, bbox):
         if isinstance(image, Image.Image):
             image_array = np.array(image)
@@ -94,14 +94,14 @@ class FastSAMPrompt:
         return [x1, y1, x2, y2]
 
     def plot_to_result(self,
-             annotations,
-             bboxes=None,
-             points=None,
-             point_label=None,
-             mask_random_color=True,
-             better_quality=True,
-             retina=False,
-             withContours=True) -> np.ndarray:
+                       annotations,
+                       bboxes=None,
+                       points=None,
+                       point_label=None,
+                       mask_random_color=True,
+                       better_quality=True,
+                       retina=False,
+                       withContours=True) -> np.ndarray:
         if isinstance(annotations[0], dict):
             annotations = [annotation['segmentation'] for annotation in annotations]
         image = self.img
@@ -188,7 +188,7 @@ class FastSAMPrompt:
         result = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
         plt.close()
         return result
-            
+
     # Remark for refactoring: IMO a function should do one thing only, storing the image and plotting should be seperated and do not necessarily need to be class functions but standalone utility functions that the user can chain in his scripts to have more fine-grained control. 
     def plot(self,
              annotations,
@@ -203,13 +203,13 @@ class FastSAMPrompt:
         if len(annotations) == 0:
             return None
         result = self.plot_to_result(
-            annotations, 
-            bboxes, 
-            points, 
-            point_label, 
+            annotations,
+            bboxes,
+            points,
+            point_label,
             mask_random_color,
-            better_quality, 
-            retina, 
+            better_quality,
+            retina,
             withContours,
         )
 
@@ -218,24 +218,24 @@ class FastSAMPrompt:
             os.makedirs(path)
         result = result[:, :, ::-1]
         cv2.imwrite(output_path, result)
-     
+
     #   CPU post process
     def fast_show_mask(
-        self,
-        annotation,
-        ax,
-        random_color=False,
-        bboxes=None,
-        points=None,
-        pointlabel=None,
-        retinamask=True,
-        target_height=960,
-        target_width=960,
+            self,
+            annotation,
+            ax,
+            random_color=False,
+            bboxes=None,
+            points=None,
+            pointlabel=None,
+            retinamask=True,
+            target_height=960,
+            target_width=960,
     ):
         mask_sum = annotation.shape[0]
         height = annotation.shape[1]
         weight = annotation.shape[2]
-        #Sort annotations based on area.
+        # Sort annotations based on area.
         areas = annotation.sum(axis=(1, 2))
         sorted_indices = np.argsort(areas)
         annotation = annotation[sorted_indices]
@@ -280,52 +280,63 @@ class FastSAMPrompt:
         return show
 
     def fast_show_mask_outline(
-        self,
-        annotation,
-        ax,
-        random_color=False,
-        bboxes=None,
-        points=None,
-        pointlabel=None,
-        retinamask=True,
-        target_height=960,
-        target_width=960,
+            self,
+            annotation,
+            canny_threshold=(300, 450),
     ):
-        mask_sum = annotation.shape[0]
         height = annotation.shape[1]
-        weight = annotation.shape[2]
-        #Sort annotations based on area.
+        width = annotation.shape[2]
+        # Sort annotations based on area.
         areas = annotation.sum(axis=(1, 2))
         sorted_indices = np.argsort(areas)
         annotation = annotation[sorted_indices]
 
-        index = annotation.argmax(axis=0)
 
         # flatten all annotations into a binary mask
         binary_mask = np.sum(annotation, axis=0)
+        # upscale the binary mask to the original image size if needed
+        if self.img.shape[0] != height or self.img.shape[1] != width:
+            binary_mask = cv2.resize(binary_mask, (self.img.shape[1], self.img.shape[0]), interpolation=cv2.INTER_NEAREST)
         # mask self.img by binary mask
-        masked = cv2.bitwise_and(cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY), cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY), mask=binary_mask.astype(np.uint8))
+        masked = cv2.bitwise_and(cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY), cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY),
+                                 mask=np.uint8(binary_mask))
 
+        masked = cv2.resize(masked, (128, 64), interpolation=cv2.INTER_NEAREST)
+        canny = cv2.Canny(masked, *canny_threshold)
+
+        # set cv2 to black and white
         if not is_raspberry_pi():
-            cv2.imshow('masked', masked)
+            cv2.namedWindow('image') # make a window with name 'image'
+            cv2.createTrackbar('L', 'image', canny_threshold[0], 500, print) #lower threshold trackbar for window 'image
+            cv2.createTrackbar('U', 'image', canny_threshold[1], 500, print) #upper threshold trackbar for window 'image
+
+            while(1):
+                cv2.imshow('image', canny)
+                k = cv2.waitKey(1) & 0xFF
+                if k == 27: #escape key
+                    break
+                low = cv2.getTrackbarPos('L', 'image')
+                up = cv2.getTrackbarPos('U', 'image')
+
+                canny = cv2.Canny(masked, low, up)
+            cv2.destroyAllWindows()
+            cv2.imwrite('./tests/masked.png', canny)
         else:
-            cv2.imwrite('/tmp/masked.png', masked)
+            cv2.imwrite('/tmp/masked.png', canny)
 
-        show = np.zeros((height, weight, 4))
-
-        return masked
+        return canny
 
     def fast_show_mask_gpu(
-        self,
-        annotation,
-        ax,
-        random_color=False,
-        bboxes=None,
-        points=None,
-        pointlabel=None,
-        retinamask=True,
-        target_height=960,
-        target_width=960,
+            self,
+            annotation,
+            ax,
+            random_color=False,
+            bboxes=None,
+            points=None,
+            pointlabel=None,
+            retinamask=True,
+            target_height=960,
+            target_width=960,
     ):
         msak_sum = annotation.shape[0]
         height = annotation.shape[1]
@@ -407,7 +418,7 @@ class FastSAMPrompt:
                 filter_id.append(_)
                 continue
             bbox = self._get_bbox_from_mask(mask['segmentation'])  # mask 的 bbox
-            cropped_boxes.append(self._segment_image(image, bbox))  
+            cropped_boxes.append(self._segment_image(image, bbox))
             # cropped_boxes.append(segment_image(image,mask["segmentation"]))
             cropped_images.append(bbox)  # Save the bounding box of the cropped image.
 
@@ -491,4 +502,3 @@ class FastSAMPrompt:
         if self.results == None:
             return []
         return self.results[0].masks.data
-        
